@@ -41,12 +41,7 @@ def _make_dataframe(item, elements, target_codes=None, debug=True):
             row = dict.fromkeys(elements.values())
             for path, key in elements.items():
                 matches = doc.xpath(path)
-                if len(matches) == 0:
-                    continue
-                elif len(matches) == 1:
-                    row[key] = matches[0]
-                else:
-                    row[key] = ",".join(matches)
+                row[key] = " ".join(matches) if matches else None
             rows.append(row)
 
         df = pd.DataFrame(rows)

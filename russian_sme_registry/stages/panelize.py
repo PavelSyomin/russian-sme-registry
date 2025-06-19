@@ -3,8 +3,9 @@ from typing import Optional
 import pyspark.sql.functions as F
 
 from ..stages.spark_stage import SparkStage
-from ..utils.spark_schemas import (sme_geocoded_schema, revexp_agg_schema,
-    empl_agg_schema)
+from ..utils.spark_schemas import (
+    sme_geocoded_schema, revexp_agg_schema, empl_agg_schema
+)
 
 
 class Panelizer(SparkStage):

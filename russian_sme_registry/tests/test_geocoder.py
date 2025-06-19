@@ -30,6 +30,7 @@ def test_geocode(tmp_path):
         "org_name",
         "org_short_name",
         "activity_code_main",
+        "activity_codes_additional",
         "region_iso_code",
         "region_code",
         "region",

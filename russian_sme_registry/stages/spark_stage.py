@@ -53,7 +53,7 @@ class SparkStage:
         if len(input_files) == 0:
             print("Input path does not contain readable CSV file(s)")
             return None
-        
+
         options = {
             "header": True,
             "escape": '"',
