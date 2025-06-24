@@ -98,6 +98,7 @@ class Extractor:
     HOST = "https://cloud-api.yandex.net/v1/"
     SOURCE_DATASETS = [sd.value for sd in SourceDatasets]
     ACTIVITY_CODES_CLASSIFIER = get_asset_path("activity_codes_classifier.csv")
+    YDISK_PUBLIC_KEY = "A+HSNsJYTlx44Nx6WbDi9FYLhPUO8FXSkmFuFIYjmdLHzAq8i5gQSMA5ba5fR4gXq/J6bpmRyOJonT3VoXnDag=="
 
     def __init__(self, storage: str = Storages.local.value,
                  num_workers: int = 1, chunksize: int = 16,
@@ -115,13 +116,13 @@ class Extractor:
         self._storage = storage
         self._temp_dir = None
 
-        if storage in (Storages.ydisk.value,):
+        if storage in (Storages.ydisk.value, Storages.ydisk_public.value):
             self._temp_dir = tempfile.TemporaryDirectory()
 
     def __call__(self, in_dir: str, out_dir: str, source_dataset: str,
                  clear: Optional[bool] = False,
                  activity_codes: Optional[List[str]] = None) -> Optional[int]:
-        input_files = self._get_files(in_dir)
+        input_files = self._get_files(in_dir, source_dataset)
         if len(input_files) == 0:
             print("Input path does not contain source ZIP files")
             return
@@ -148,7 +149,7 @@ class Extractor:
                 print(f"{filename} already processed")
                 continue
 
-            path = self._resolve_local_file_path(in_dir, filename)
+            path = self._resolve_local_file_path(in_dir, filename, source_dataset)
             print(f"Processing {filename}")
             out_file = pathlib.Path(out_dir) / f"{path.stem}.csv"
 
@@ -180,6 +181,35 @@ class Extractor:
             del archive
 
         return processed_count
+
+    def _download_public(self, source_dataset: str, filename: str) -> pathlib.Path:
+        print(f"Downloading file from Yandex Disk to {self._temp_dir.name}")
+
+        api_path = "disk/public/resources/download"
+        params = {
+            "path": f"/download/{source_dataset}/{filename}",
+            "public_key": self.YDISK_PUBLIC_KEY,
+        }
+        url = urljoin(self.HOST, api_path)
+
+        resp = requests.get(url, params=params)
+        if resp.status_code != 200:
+            print("Cannot get download URL, see error message below")
+            print(resp.json())
+            return None
+
+        download_url = resp.json().get("href")
+        resp = requests.get(download_url, stream=True)
+        if resp.status_code != 200:
+            print("Cannot download file")
+            return None
+
+        downloaded_file = pathlib.Path(self._temp_dir.name) / filename
+        with open(downloaded_file, "wb") as f:
+            for chunk in tqdm(resp.iter_content(2**20)): # chunk size is 1 Mib
+                f.write(chunk)
+
+        return downloaded_file
 
     def _download(self, data_path: str, filename: str) -> pathlib.Path:
         print(f"Downloading file from Yandex Disk to {self._temp_dir.name}")
@@ -219,7 +249,7 @@ class Extractor:
         with open(history_file_path, "w") as f:
             json.dump(history, f)
 
-    def _get_files(self, directory: str) -> List[str]:
+    def _get_files(self, directory: str, source_dataset: str) -> List[str]:
         if self._storage == Storages.local.value:
             data_folder = pathlib.Path(directory)
             if not data_folder.exists():
@@ -227,6 +257,8 @@ class Extractor:
                 files = []
             else:
                 files = [f.name for f in data_folder.glob("*.zip")]
+        elif self._storage == Storages.ydisk_public.value:
+            files = self._get_file_list_from_ydisk_public(source_dataset)
         else:
             files = self._get_file_list_from_ydisk(directory)
 
@@ -245,6 +277,34 @@ class Extractor:
         params = {
             "path": directory,
             "fields": "_embedded.items.path,_embedded.items.type",
+            "limit": 1000,
+        }
+        url = urljoin(self.HOST, api_path)
+
+        resp = requests.get(url, headers=headers, params=params)
+        if resp.status_code != 200:
+            print("Cannot get path medatata, see error message below")
+            print(resp.status_code, resp.json())
+            return result
+
+        for item in resp.json().get("_embedded", {}).get("items", []):
+            if item.get("type") == "file":
+                _, _, fn = str(item.get("path")).rpartition("/")
+                result.append(fn)
+
+        return result
+
+    def _get_file_list_from_ydisk_public(self, source_dataset: str) -> List[str]:
+        print("Getting files list for public Yandex Disk data folder")
+
+        result = []
+        api_path = "disk/public/resources"
+        headers = {
+            "Accept": "application/json",
+        }
+        params = {
+            "public_key": self.YDISK_PUBLIC_KEY,
+            "path": f"/download/{source_dataset}",
             "limit": 1000,
         }
         url = urljoin(self.HOST, api_path)
@@ -288,9 +348,11 @@ class Extractor:
         else:
             out_path.mkdir(parents=True)
 
-    def _resolve_local_file_path(self, data_path: str, filename: str) -> pathlib.Path:
+    def _resolve_local_file_path(self, data_path: str, filename: str, source_dataset: str) -> pathlib.Path:
         if self._storage == Storages.local.value:
             file_path = pathlib.Path(data_path) / filename
+        elif self._storage == Storages.ydisk_public.value:
+            file_path = self._download_public(source_dataset, filename)
         else:
             file_path = self._download(data_path, filename)
 

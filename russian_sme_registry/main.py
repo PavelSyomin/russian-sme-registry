@@ -1,4 +1,5 @@
 import json
+import os
 import pathlib
 from typing import List, Optional
 from typing_extensions import Annotated
@@ -483,20 +484,40 @@ def config(
     ] = False,
     chunksize: Annotated[
         int,
-        typer.Option(help="Chunk size for extractor", rich_help_panel="Available options")
-    ] = 16,
+        typer.Option(
+            help="Chunk size for extractor",
+            rich_help_panel="Available options",
+            show_default="16"
+        )
+    ] = None,
     num_workers: Annotated[
         int,
-        typer.Option(help="Number of workers = processes for extractor", rich_help_panel="Available options")
-    ] = 1,
+        typer.Option(
+            help="Number of workers = processes for extractor. "
+                 "Bigger is faster, but cannot be higher than number of CPU cores",
+            rich_help_panel="Available options",
+            show_default="1"
+        )
+    ] = None,
     storage: Annotated[
         Storages,
-        typer.Option(help="Place to download source datasets (note: *source datasets only* rather than all other files)", rich_help_panel="Available options")
-    ] = Storages.local.value,
-    ydisk_token: Annotated[
+        typer.Option(
+            help="Place to store downloaded source datasets "
+                 " and/or to later get them for extract stage. "
+                 " Note that ydisk_public option is used by extractor only"
+                 " and causes error on download stage",
+            rich_help_panel="Available options",
+            show_default="local"
+        )
+    ] = None,
+    token: Annotated[
         str,
-        typer.Option(help="Token for Yandex Disk; used if *storage* is *ydisk*", rich_help_panel="Available options")
-    ] = "",
+        typer.Option(
+            help="Token for Yandex Disk; used if *storage* is *ydisk*",
+            rich_help_panel="Available options",
+            show_default="<empty>"
+        )
+    ] = None,
 ):
     """
     Show or set global options for all commands
@@ -508,10 +529,14 @@ def config(
 
         return
 
-    app_config["token"] = ydisk_token
-    app_config["num_workers"] = num_workers
-    app_config["chunksize"] = chunksize
-    app_config["storage"] = storage.value
+    if num_workers and num_workers > os.cpu_count():
+        num_workers = os.cpu_count()
+        print(f"Number of workers is set to {num_workers} (max number of CPU cores)")
+
+    app_config["token"] = token or app_config.get("token")
+    app_config["num_workers"] = num_workers or app_config.get("num_workers")
+    app_config["chunksize"] = chunksize or app_config.get("chunksize")
+    app_config["storage"] = storage.value if storage else app_config.get("storage")
 
     with open(app_config_path, "w") as f:
         json.dump(app_config, f)

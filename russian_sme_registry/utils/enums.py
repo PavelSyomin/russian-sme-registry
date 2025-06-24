@@ -18,3 +18,4 @@ class StageNames(enum.Enum):
 class Storages(enum.Enum):
     local = "local"
     ydisk = "ydisk"
+    ydisk_public = "ydisk_public"

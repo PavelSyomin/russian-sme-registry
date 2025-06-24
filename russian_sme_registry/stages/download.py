@@ -51,6 +51,12 @@ class Downloader:
             self._download_to_local(data_urls, download_dir)
         elif self._storage == Storages.ydisk.value:
             self._download_to_ydisk(data_urls, download_dir)
+        elif self._storage == Storages.ydisk_public.value:
+            raise RuntimeError(
+                "Download from public Yandex Disk storage is not supported yet. "
+                "Please run extract stage (and next stages) directly "
+                "or run process command with default --no-download flag"
+            )
 
     def _create_download_dir(self, download_dir: str):
         if self._storage == Storages.local.value:
@@ -235,7 +241,7 @@ class Downloader:
 
         return info
 
-    def _check_ydisk_download_status(self, info_url: str) -> str:
+    def _check_ydisk_download_status(self, info_url: Optional[str]) -> str:
         if info_url is None:
             return "cannot check (no status URL)"
 

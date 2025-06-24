@@ -1,4 +1,3 @@
-from collections import defaultdict
 import pathlib
 import shutil
 
@@ -301,14 +300,14 @@ def test_panelize_custom_paths(tmp_path):
     sme_out_file = tmp_path / "panel.csv"
 
     args = [
-        "panelize", 
-        "--sme-file", 
-        str(sme_file), 
-        "--revexp-file", 
-        str(revexp_file), 
-        "--empl-file", 
-        str(empl_file), 
-        "--out-file", 
+        "panelize",
+        "--sme-file",
+        str(sme_file),
+        "--revexp-file",
+        str(revexp_file),
+        "--empl-file",
+        str(empl_file),
+        "--out-file",
         str(sme_out_file),
     ]
 
@@ -374,15 +373,16 @@ def test_config():
     result = runner.invoke(app, ["config"])
     assert result.exit_code == 0
 
-    args = ["config", "--ydisk-token", "test-token", "--storage", "ydisk"]
-    result = runner.invoke(app, args)    
-    assert result.exit_code == 0    
+    args = ["config", "--token", "test-token", "--storage", "ydisk", "--chunksize", "1024"]
+    result = runner.invoke(app, args)
+    assert result.exit_code == 0
     assert "Configuration updated" in result.stdout
 
     result = runner.invoke(app, ["config", "--show"])
     assert result.exit_code == 0
     assert "test-token" in result.stdout
     assert "ydisk" in result.stdout
+    assert "1024" in result.stdout
 
     args = ["config", "--storage", "local"]
     result = runner.invoke(app, args)
@@ -392,6 +392,7 @@ def test_config():
     result = runner.invoke(app, ["config", "--show"])
     assert result.exit_code == 0
     assert "local" in result.stdout
+    assert "1024" in result.stdout # chunksize is not changed
 
 
 def test_download_ydisk(monkeypatch, tmp_path):
@@ -402,7 +403,7 @@ def test_download_ydisk(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
 
     mock_ydisk_api.clear()
-    
+
     with monkeypatch.context() as m:
         m.setitem(app_config, "storage", "ydisk")
         m.setitem(app_config, "ydisk_token", "token")
@@ -419,7 +420,7 @@ def test_extract_ydisk(monkeypatch, tmp_path):
     monkeypatch.setattr(requests, "put", mock_put)
     monkeypatch.setattr(Downloader, "YDISK_DOWNLOAD_TIMEOUT", 0)
     monkeypatch.chdir(tmp_path)
-    
+
     mock_ydisk_api.clear()
     for source_dataset in SourceDatasets:
         mock_ydisk_api.put(
@@ -437,8 +438,8 @@ def test_extract_ydisk(monkeypatch, tmp_path):
                     path=f"{source_dataset.value}/{fn.name}",
                     url=fn.name
                 ),
-            ) 
-   
+            )
+
     with monkeypatch.context() as m:
         m.setitem(app_config, "storage", "ydisk")
         m.setitem(app_config, "ydisk_token", "token")
@@ -460,7 +461,7 @@ def test_process_ydisk_no_download(monkeypatch, tmp_path):
     monkeypatch.setattr(requests, "put", mock_put)
     monkeypatch.setattr(Downloader, "YDISK_DOWNLOAD_TIMEOUT", 0)
     monkeypatch.chdir(tmp_path)
-   
+
     mock_ydisk_api.clear()
     for top_level_path in ("russian-sme-registry-data", "russian-sme-registry-data/download"):
         mock_ydisk_api.put(
@@ -486,8 +487,8 @@ def test_process_ydisk_no_download(monkeypatch, tmp_path):
                     path=f"{upload_dir}/{fn.name}",
                     url=fn.name
                 ),
-            ) 
-   
+            )
+
     with monkeypatch.context() as m:
         m.setitem(app_config, "storage", "ydisk")
         m.setitem(app_config, "ydisk_token", "token")
