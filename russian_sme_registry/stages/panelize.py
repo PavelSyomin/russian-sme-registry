@@ -12,9 +12,14 @@ from ..utils.spark_schemas import (
 class Panelizer(SparkStage):
     SPARK_APP_NAME = "Panel Table Maker"
 
-    def __call__(self, sme_file: str, out_file: str,
-                 revexp_file: Optional[str] = None,
-                 empl_file: Optional[str] = None):
+    def __call__(
+            self,
+            sme_file: str,
+            out_file: str,
+            revexp_file: Optional[str] = None,
+            empl_file: Optional[str] = None,
+            remove_personal_names: bool = True
+        ):
         sme_data = self._read(sme_file, sme_geocoded_schema)
         if sme_data is None:
             return
@@ -39,6 +44,9 @@ class Panelizer(SparkStage):
                 "oktmo": "municipality_code",
             })
         )
+
+        if remove_personal_names:
+            panel = panel.drop("first_name", "last_name", "patronymic")
 
         if revexp_file is not None:
             revexp_data = self._read(revexp_file, revexp_agg_schema)

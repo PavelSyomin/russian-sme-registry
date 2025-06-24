@@ -48,3 +48,21 @@ def test_panelize_no_revexp_empl(tmp_path):
 
     for col in ("revenue", "expenditure", "employees_count"):
         assert col not in df.columns
+
+
+def test_panelize_remove_personal_names(tmp_path):
+    sme_file = pathlib.Path(__file__).parent / "data/sme/test-geocoded.csv"
+    out_file = tmp_path / "panel.csv"
+
+    panelizer = Panelizer()
+
+    panelizer(str(sme_file), str(out_file), remove_personal_names=True)
+
+    df = pd.read_csv(out_file, dtype=str, sep=";")
+
+    assert len(df) == 58
+    assert "year" in df.columns
+    assert "tax_number" in df.columns
+
+    for col in ("first_name", "last_name", "patronymic"):
+        assert col not in df.columns

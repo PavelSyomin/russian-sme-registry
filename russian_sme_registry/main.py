@@ -492,12 +492,18 @@ def panelize(
             readable=True
         )
     ] = get_default_path(StageNames.aggregate.value, SourceDatasets.empl.value, "agg.csv"),
+    remove_personal_names: Annotated[
+        bool,
+        typer.Option(
+            help="Remove personal names of sole traders from panel dataset for privacy reasons",
+        )
+    ] = True,
 ):
     """
     Make panel dataset based on geocoded SME data and aggregated revexp and empl tables (stage 5)
     """
     p = Panelizer()
-    p(str(sme_file), str(out_file), str(revexp_file), str(empl_file))
+    p(str(sme_file), str(out_file), str(revexp_file), str(empl_file), remove_personal_names)
 
 
 @app.command(rich_help_panel="Configuration", no_args_is_help=True)
