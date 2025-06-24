@@ -71,7 +71,7 @@ class SparkStage:
     def _write(self, df: DataFrame, out_file: str, **kwargs):
         """Save Spark dataframe into a single CSV file"""
         with tempfile.TemporaryDirectory() as out_dir:
-            options = dict(header=True, nullValue="NA", escape='"')
+            options = dict(header=True, escape='"')
             options.update(**kwargs)
 
             print("Writing to temporary directory")

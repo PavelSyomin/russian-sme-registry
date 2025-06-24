@@ -1,5 +1,6 @@
 from typing import Optional
 
+from pyspark.sql.types import ByteType
 import pyspark.sql.functions as F
 
 from ..stages.spark_stage import SparkStage
@@ -24,20 +25,39 @@ class Panelizer(SparkStage):
                 "year",
                 F.explode(F.sequence(F.year("start_date"), F.year("end_date")))
             )
+            .withColumn(
+                "kind", (F.col("kind") == 2).cast(ByteType())
+            )
+            .withColumnsRenamed({
+                "tin": "tax_number",
+                "reg_number": "registration_number",
+                "kind": "is_sole_trader",
+                "category": "sme_category",
+                "activity_code_main": "main_nace_code",
+                "activity_codes_additional": "additional_nace_codes",
+                "region": "region_name",
+                "oktmo": "municipality_code",
+            })
         )
 
         if revexp_file is not None:
             revexp_data = self._read(revexp_file, revexp_agg_schema)
             if revexp_data is not None:
                 print("Joining with revexp data")
-                panel = panel.join(revexp_data, on=["tin", "year"], how="leftouter")
+                revexp_data = revexp_data.withColumnsRenamed({
+                    "tin": "tax_number",
+                })
+                panel = panel.join(revexp_data, on=["tax_number", "year"], how="leftouter")
 
         if empl_file is not None:
             empl_data = self._read(empl_file, empl_agg_schema)
             if empl_data is not None:
                 print("Joining with empl data")
-                panel = panel.join(empl_data, on=["tin", "year"], how="leftouter")
+                empl_data = empl_data.withColumnsRenamed({
+                    "tin": "tax_number",
+                })
+                panel = panel.join(empl_data, on=["tax_number", "year"], how="leftouter")
 
-        panel = panel.orderBy("tin", "year")
+        panel = panel.orderBy("tax_number", "year")
 
-        self._write(panel, out_file)
+        self._write(panel, out_file, nullValue="NA", sep=";")

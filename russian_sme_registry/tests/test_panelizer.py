@@ -17,17 +17,18 @@ def test_panelize(tmp_path):
 
     panelizer(str(sme_file), str(out_file), str(revexp_file), str(empl_file))
 
-    df = pd.read_csv(out_file, dtype=str)
+    df = pd.read_csv(out_file, dtype=str, sep=";")
 
     assert len(df) == 58
     assert "year" in df.columns
+    assert "tax_number" in df.columns
 
     assert df["revenue"].notna().sum() == 0
     assert df["expenditure"].notna().sum() == 0
     assert df["employees_count"].notna().sum() == 2
 
     with_empl_count = df.loc[df["employees_count"].notna()]
-    assert list(with_empl_count["tin"].unique()) == ["8901037297"]
+    assert list(with_empl_count["tax_number"].unique()) == ["8901037297"]
     assert list(with_empl_count["year"].unique()) == ["2019"]
 
 
@@ -39,10 +40,11 @@ def test_panelize_no_revexp_empl(tmp_path):
 
     panelizer(str(sme_file), str(out_file))
 
-    df = pd.read_csv(out_file, dtype=str)
+    df = pd.read_csv(out_file, dtype=str, sep=";")
 
     assert len(df) == 58
     assert "year" in df.columns
+    assert "tax_number" in df.columns
 
     for col in ("revenue", "expenditure", "employees_count"):
         assert col not in df.columns
