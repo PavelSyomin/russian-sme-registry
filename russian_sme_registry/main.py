@@ -297,7 +297,19 @@ def aggregate_all(
         typer.Option(
             help="Path to save aggregated CSV files. Sub-folders *sme*, *revexp*, *empl* for respective datasets will be created automatically"
         )
-    ] = get_default_path(StageNames.aggregate.value)
+    ] = get_default_path(StageNames.aggregate.value),
+    with_crimea: Annotated[
+        bool,
+        typer.Option(
+            help="Include Crimea and Sevastopol regions",
+        )
+    ] = False,
+    with_new_territories: Annotated[
+        bool,
+        typer.Option(
+            help="Include Donetsk, Luhansk, Zaporozhye, and Kherson regions",
+        )
+    ] = False,
 ):
     """
     Aggregate all three source datasets
@@ -309,6 +321,10 @@ def aggregate_all(
             out_file=str(out_dir / source_dataset.value / "agg.csv"),
             source_dataset=source_dataset.value,
         )
+        if source_dataset.value == SourceDatasets.sme.value:
+            args["with_crimea"] = with_crimea
+            args["with_new_territories"] = with_new_territories
+
         if source_dataset.value in ("revexp", "empl"):
             args["sme_data_file"] = str(out_dir / SourceDatasets.sme.value / "agg.csv")
         a(**args)
@@ -327,13 +343,25 @@ def aggregate_sme(
         typer.Option(
             help="Path to save aggregated CSV files"
         )
-    ] = get_default_path(StageNames.aggregate.value, SourceDatasets.sme.value, "agg.csv")
+    ] = get_default_path(StageNames.aggregate.value, SourceDatasets.sme.value, "agg.csv"),
+    with_crimea: Annotated[
+        bool,
+        typer.Option(
+            help="Include Crimea and Sevastopol regions",
+        )
+    ] = False,
+    with_new_territories: Annotated[
+        bool,
+        typer.Option(
+            help="Include Donetsk, Luhansk, Zaporozhye, and Kherson regions",
+        )
+    ] = False,
 ):
     """
     Aggregate SME dataset
     """
     a = Aggregator()
-    a(str(in_dir), str(out_file), SourceDatasets.sme.value)
+    a(str(in_dir), str(out_file), SourceDatasets.sme.value, with_crimea, with_new_territories)
 
 
 @aggregate_app.command("revexp", rich_help_panel="Source dataset(s)")

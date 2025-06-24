@@ -14,11 +14,18 @@ class Aggregator(SparkStage):
     INPUT_DATE_FORMAT = "dd.MM.yyyy"
     SPARK_APP_NAME = "Extracted Data Aggregator"
 
-    def __call__(self, in_dir: str, out_file: str,
-                 source_dataset: str, sme_data_file: Optional[str] = None):
+    def __call__(
+        self,
+        in_dir: str,
+        out_file: str,
+        source_dataset: str,
+        sme_data_file: Optional[str] = None,
+        with_crimea: bool = False,
+        with_new_territories: bool = False,
+    ):
         """Execute the aggregation of all datasets"""
         if source_dataset == SourceDatasets.sme.value:
-            self._process_sme_registry(in_dir, out_file)
+            self._process_sme_registry(in_dir, out_file, with_crimea, with_new_territories)
         elif source_dataset == SourceDatasets.revexp.value:
             self._process_revexp_data(in_dir, out_file, sme_data_file)
         elif source_dataset == SourceDatasets.empl.value:
@@ -40,7 +47,13 @@ class Aggregator(SparkStage):
 
         return table
 
-    def _process_sme_registry(self, in_dir: str, out_file: str):
+    def _process_sme_registry(
+        self,
+        in_dir: str,
+        out_file: str,
+        with_crimea: bool = False,
+        with_new_territories: bool = False,
+    ):
         """Process CSV files extacted from SME registry archives"""
         data = self._read(in_dir, sme_schema, dateFormat=self.INPUT_DATE_FORMAT)
         if data is None:
@@ -86,26 +99,33 @@ class Aggregator(SparkStage):
             "city_name", "city_type",
             "settlement_name", "settlement_type",
         ]
-        excluded_regions = [
-            "Крым",
-            "Севастополь",
-            "Донецкая",
-            "Луганская",
-            "Запорожская",
-            "Херсонская"
-        ]
-        excluded_regions_condition = (
-            "not ("
-            + " or ".join(f"region_name ilike '%{region.upper()}%'" for region in excluded_regions)
-            + ")"
-        )
 
         w_by_tin = Window.partitionBy(["tin"]).orderBy("data_date")
         w_by_tin_unbounded = w_by_tin.rowsBetween(0, Window.unboundedFollowing)
 
+        excluded_regions = []
+        if not with_crimea:
+            excluded_regions.extend([
+                "Крым",
+                "Севастополь",
+            ])
+        if not with_new_territories:
+            excluded_regions.extend([
+                "Донецкая",
+                "Луганская",
+                "Запорожская",
+                "Херсонская",
+            ])
+        if excluded_regions:
+            excluded_regions_condition = (
+                "not ("
+                + " or ".join(f"region_name ilike '%{region.upper()}%'" for region in excluded_regions)
+                + ")"
+            )
+            data = data.filter(excluded_regions_condition)
+
         table = (
             data
-            .filter(excluded_regions_condition)
             .withColumns({
                 colname: F.upper(colname)
                 for colname in cols_to_uppercase
