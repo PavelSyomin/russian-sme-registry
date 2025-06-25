@@ -9,9 +9,9 @@ import typer
 from russian_sme_registry.stages.aggregate import Aggregator
 from russian_sme_registry.stages.download import Downloader
 from russian_sme_registry.stages.extract import Extractor
-from russian_sme_registry.stages.geocode import Geocoder
+from russian_sme_registry.stages.geocode import DaDataGeocoder, LocalGeocoder
 from russian_sme_registry.stages.panelize import Panelizer
-from russian_sme_registry.utils.enums import SourceDatasets, StageNames, Storages
+from russian_sme_registry.utils.enums import Geocoders, SourceDatasets, StageNames, Storages
 
 
 APP_NAME = "russian-sme-registry"
@@ -48,7 +48,14 @@ app.add_typer(
     no_args_is_help=True
 )
 
-default_config = dict(storage="local", token="", num_workers=1, chunksize=16)
+default_config = dict(
+    storage="local",
+    token="",
+    num_workers=1,
+    chunksize=16,
+    geocoder="local",
+    dadata_api_key="",
+)
 
 app_dir = typer.get_app_dir(APP_NAME)
 app_config_path = pathlib.Path(app_dir) / "config.json"
@@ -448,12 +455,15 @@ def geocode(
         typer.Option(
             help="Path to save geocoded CSV file"
         )
-    ] = get_default_path(StageNames.geocode.value, SourceDatasets.sme.value, "geocoded.csv")
+    ] = get_default_path(StageNames.geocode.value, SourceDatasets.sme.value, "geocoded.csv"),
 ):
     """
     Geocode SME aggregated data (stage 4) OR geocode *any other dataset with a similar structure of address fields*
     """
-    g = Geocoder()
+    if app_config.get("geocoder") == Geocoders.dadata.value:
+        g = DaDataGeocoder(app_config.get("dadata_api_key"))
+    else:
+        g = LocalGeocoder()
     g(str(in_file), str(out_file))
 
 
@@ -552,6 +562,22 @@ def config(
             show_default="<empty>"
         )
     ] = None,
+    geocoder: Annotated[
+        Geocoders,
+        typer.Option(
+            help="Geocoder to use",
+            rich_help_panel="Available options",
+            show_default="local"
+        )
+    ] = None,
+    dadata_api_key: Annotated[
+        str,
+        typer.Option(
+            help="API key for DaData geocoder",
+            rich_help_panel="Available options",
+            show_default="<empty>"
+        )
+    ] = None,
 ):
     """
     Show or set global options for all commands
@@ -571,6 +597,8 @@ def config(
     app_config["num_workers"] = num_workers or app_config.get("num_workers")
     app_config["chunksize"] = chunksize or app_config.get("chunksize")
     app_config["storage"] = storage.value if storage else app_config.get("storage")
+    app_config["geocoder"] = geocoder.value if geocoder else app_config.get("geocoder")
+    app_config["dadata_api_key"] = dadata_api_key or app_config.get("dadata_api_key")
 
     with open(app_config_path, "w") as f:
         json.dump(app_config, f)
@@ -592,7 +620,7 @@ def process(
             help="**A**ctivity **c**ode(s) to filter SME source dataset by. Can be either activity group code, e.g. *--ac A*, or exact digit code, e.g. *--ac 01.10*. Multiple codes or groups can be specified by multiple *ac* options, e.g. *--ac 01.10 --ac 69.20*. Top-level codes include child codes, i.e. *--ac 01.10* selects 01.10.01, 01.10.02, 01.10.10 (if any children are present). If not specified, filtering is disabled",
             show_default="no filtering by activity code(s)"
         )
-    ] = None
+    ] = None,
 ):
     """
     Process the source data with this single command

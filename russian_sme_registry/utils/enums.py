@@ -1,6 +1,11 @@
 import enum
 
 
+class Geocoders(enum.Enum):
+    dadata = "dadata"
+    local = "local"
+
+
 class SourceDatasets(enum.Enum):
     sme = "sme"
     revexp = "revexp"

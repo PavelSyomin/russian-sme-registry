@@ -2,16 +2,15 @@ import pathlib
 
 import numpy as np
 import pandas as pd
-import pytest
 
-from ..stages.geocode import Geocoder
+from ..stages.geocode import LocalGeocoder
 
 
 def test_geocode(tmp_path):
     in_file = pathlib.Path(__file__).parent / "data/sme/test-aggregated.csv"
     out_file = tmp_path / "geocoded.csv"
 
-    geocoder = Geocoder()
+    geocoder = LocalGeocoder()
 
     geocoder(str(in_file), str(out_file))
 
