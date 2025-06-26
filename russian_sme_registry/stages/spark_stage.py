@@ -1,7 +1,6 @@
 import pathlib
 import shutil
 import tempfile
-from typing import Optional
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.types import StructType
@@ -68,18 +67,23 @@ class SparkStage:
 
         return data
 
-    def _write(self, df: DataFrame, out_file: str, **kwargs):
-        """Save Spark dataframe into a single CSV file"""
-        with tempfile.TemporaryDirectory() as out_dir:
+    def _write(self, df: DataFrame, out_file: str, format: str = "csv", **kwargs):
+        """Save Spark dataframe into a single file"""
+        if format in ("csv",):
             options = dict(header=True, escape='"')
-            options.update(**kwargs)
+        elif format in ("parquet",):
+            options = dict()
+        else:
+            raise ValueError(f"Unsupported format: {format}")
 
-            print("Writing to temporary directory")
-            df.coalesce(1).write.options(**options).csv(out_dir, mode="overwrite")
+        options.update(**kwargs)
+
+        with tempfile.TemporaryDirectory() as out_dir:
+            df.coalesce(1).write.options(**options).format(format).save(out_dir, mode="overwrite")
 
             # Spark writes to a folder with an arbitrary filename,
             # so we need to find and move the resulting file to the destination
-            result = next(pathlib.Path(out_dir).glob("*.csv"), None)
+            result = next(pathlib.Path(out_dir).glob(f"*.{format}"), None)
             if result is None:
                 print("Failed to save file")
 

@@ -1,7 +1,7 @@
 from collections import namedtuple
 from typing import Any, Union
 
-from fuzzywuzzy import fuzz, process
+from fuzzywuzzy import process
 import numpy as np
 import pandas as pd
 
@@ -32,7 +32,8 @@ class Regions:
             iso_code = row.iso_code
 
             region = Region(
-                code=code, name=name, short_name=short_name, iso_code=row.iso_code)
+                code=code, name=name, short_name=short_name, iso_code=iso_code
+            )
             self._regions[index] = region
 
             self._index_by_code[int(code)] = index

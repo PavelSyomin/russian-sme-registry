@@ -55,6 +55,11 @@ default_config = dict(
     chunksize=16,
     geocoder="local",
     dadata_api_key="",
+    output_formats=["csv"],
+    split_by_region=False,
+    remove_personal_names=True,
+    with_crimea=True,
+    with_new_territories=False,
 )
 
 app_dir = typer.get_app_dir(APP_NAME)
@@ -305,18 +310,6 @@ def aggregate_all(
             help="Path to save aggregated CSV files. Sub-folders *sme*, *revexp*, *empl* for respective datasets will be created automatically"
         )
     ] = get_default_path(StageNames.aggregate.value),
-    with_crimea: Annotated[
-        bool,
-        typer.Option(
-            help="Include Crimea and Sevastopol regions",
-        )
-    ] = False,
-    with_new_territories: Annotated[
-        bool,
-        typer.Option(
-            help="Include Donetsk, Luhansk, Zaporozhye, and Kherson regions",
-        )
-    ] = False,
 ):
     """
     Aggregate all three source datasets
@@ -329,8 +322,8 @@ def aggregate_all(
             source_dataset=source_dataset.value,
         )
         if source_dataset.value == SourceDatasets.sme.value:
-            args["with_crimea"] = with_crimea
-            args["with_new_territories"] = with_new_territories
+            args["with_crimea"] = app_config.get("with_crimea", True)
+            args["with_new_territories"] = app_config.get("with_new_territories", False)
 
         if source_dataset.value in ("revexp", "empl"):
             args["sme_data_file"] = str(out_dir / SourceDatasets.sme.value / "agg.csv")
@@ -351,24 +344,18 @@ def aggregate_sme(
             help="Path to save aggregated CSV files"
         )
     ] = get_default_path(StageNames.aggregate.value, SourceDatasets.sme.value, "agg.csv"),
-    with_crimea: Annotated[
-        bool,
-        typer.Option(
-            help="Include Crimea and Sevastopol regions",
-        )
-    ] = False,
-    with_new_territories: Annotated[
-        bool,
-        typer.Option(
-            help="Include Donetsk, Luhansk, Zaporozhye, and Kherson regions",
-        )
-    ] = False,
 ):
     """
     Aggregate SME dataset
     """
     a = Aggregator()
-    a(str(in_dir), str(out_file), SourceDatasets.sme.value, with_crimea, with_new_territories)
+    a(
+        str(in_dir),
+        str(out_file),
+        SourceDatasets.sme.value,
+        with_crimea=app_config.get("with_crimea", True),
+        with_new_territories=app_config.get("with_new_territories", False)
+    )
 
 
 @aggregate_app.command("revexp", rich_help_panel="Source dataset(s)")
@@ -478,12 +465,12 @@ def panelize(
             readable=True
         )
     ] = get_default_path(StageNames.geocode.value, SourceDatasets.sme.value, "geocoded.csv"),
-    out_file: Annotated[
+    out_dir: Annotated[
         Optional[pathlib.Path],
         typer.Option(
             help="Path to save panel CSV file"
         )
-    ] = get_default_path(StageNames.panelize.value, "panel.csv"),
+    ] = get_default_path(StageNames.panelize.value),
     revexp_file: Annotated[
         Optional[pathlib.Path],
         typer.Option(
@@ -502,18 +489,28 @@ def panelize(
             readable=True
         )
     ] = get_default_path(StageNames.aggregate.value, SourceDatasets.empl.value, "agg.csv"),
-    remove_personal_names: Annotated[
-        bool,
-        typer.Option(
-            help="Remove personal names of sole traders from panel dataset for privacy reasons",
-        )
-    ] = True,
 ):
     """
     Make panel dataset based on geocoded SME data and aggregated revexp and empl tables (stage 5)
     """
+    remove_personal_names = app_config.get("remove_personal_names", True)
+    save_to_csv = "csv" in app_config.get("output_formats", [])
+    save_to_parquet = "parquet" in app_config.get("output_formats", [])
+    save_to_excel = "excel" in app_config.get("output_formats", [])
+    split_by_region = app_config.get("split_by_region", False)
+
     p = Panelizer()
-    p(str(sme_file), str(out_file), str(revexp_file), str(empl_file), remove_personal_names)
+    p(
+        str(sme_file),
+        str(out_dir),
+        str(revexp_file),
+        str(empl_file),
+        remove_personal_names,
+        save_to_csv,
+        save_to_parquet,
+        save_to_excel,
+        split_by_region,
+    )
 
 
 @app.command(rich_help_panel="Configuration", no_args_is_help=True)
@@ -578,6 +575,46 @@ def config(
             show_default="<empty>"
         )
     ] = None,
+    output_formats: Annotated[
+        List[str],
+        typer.Option(
+            help="Output formats to save panel dataset to. Can be *csv*, *parquet*, *excel*. Multiple formats can be specified by multiple *output_formats* options, e.g. *--output_formats csv parquet*",
+            rich_help_panel="Available options",
+            show_default="csv",
+        )
+    ] = None,
+    split_by_region: Annotated[
+        bool,
+        typer.Option(
+            help="Split panel dataset by region",
+            rich_help_panel="Available options",
+            show_default="false"
+        )
+    ] = None,
+    remove_personal_names: Annotated[
+        bool,
+        typer.Option(
+            help="Remove personal names of sole traders from panel dataset for privacy reasons",
+            rich_help_panel="Available options",
+            show_default="true"
+        )
+    ] = None,
+    with_crimea: Annotated[
+        bool,
+        typer.Option(
+            help="Include Crimea and Sevastopol regions",
+            rich_help_panel="Available options",
+            show_default="true"
+        )
+    ] = None,
+    with_new_territories: Annotated[
+        bool,
+        typer.Option(
+            help="Include Donetsk, Luhansk, Zaporozhye, and Kherson regions",
+            rich_help_panel="Available options",
+            show_default="false"
+        )
+    ] = None,
 ):
     """
     Show or set global options for all commands
@@ -599,6 +636,11 @@ def config(
     app_config["storage"] = storage.value if storage else app_config.get("storage")
     app_config["geocoder"] = geocoder.value if geocoder else app_config.get("geocoder")
     app_config["dadata_api_key"] = dadata_api_key or app_config.get("dadata_api_key")
+    app_config["output_formats"] = output_formats or app_config.get("output_formats")
+    app_config["split_by_region"] = split_by_region or app_config.get("split_by_region")
+    app_config["remove_personal_names"] = remove_personal_names or app_config.get("remove_personal_names")
+    app_config["with_crimea"] = with_crimea or app_config.get("with_crimea")
+    app_config["with_new_territories"] = with_new_territories or app_config.get("with_new_territories")
 
     with open(app_config_path, "w") as f:
         json.dump(app_config, f)

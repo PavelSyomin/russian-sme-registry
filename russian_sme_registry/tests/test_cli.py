@@ -288,8 +288,7 @@ def test_panelize(monkeypatch, tmp_path):
     result = runner.invoke(app, ["panelize"])
     assert result.exit_code == 0
 
-    sme_out_file = tmp_path / "russian-sme-registry-data" / "panelize" / "panel.csv"
-    assert sme_out_file.exists()
+    assert (tmp_path / "russian-sme-registry-data" / "panelize" / "csv" / "all-regions.csv").exists()
 
 
 def test_panelize_custom_paths(tmp_path):
@@ -297,7 +296,7 @@ def test_panelize_custom_paths(tmp_path):
     revexp_file = pathlib.Path(__file__).parent / "data" / "revexp" / "test-aggregated.csv"
     empl_file = pathlib.Path(__file__).parent / "data" / "empl" / "test-aggregated.csv"
 
-    sme_out_file = tmp_path / "panel.csv"
+    sme_out_file = tmp_path / "custom" / "csv" / "all-regions.csv"
 
     args = [
         "panelize",
@@ -307,8 +306,8 @@ def test_panelize_custom_paths(tmp_path):
         str(revexp_file),
         "--empl-file",
         str(empl_file),
-        "--out-file",
-        str(sme_out_file),
+        "--out-dir",
+        str(tmp_path / "custom"),
     ]
 
     result = runner.invoke(app, args)
@@ -344,7 +343,7 @@ def test_process_no_download(monkeypatch, tmp_path):
     assert len(list((output_dir / "extract").iterdir())) == 3
     assert len(list((output_dir / "aggregate").iterdir())) == 3
     assert len(list((output_dir / "geocode").iterdir())) == 1
-    assert (output_dir / "panelize" / "panel.csv").exists()
+    assert (output_dir / "panelize" / "csv" / "all-regions.csv").exists()
 
 def test_process_with_download(monkeypatch, tmp_path):
     def mock_get_data_urls(self, source_dataset: str):
@@ -366,7 +365,7 @@ def test_process_with_download(monkeypatch, tmp_path):
     assert len(list((output_dir / "extract").iterdir())) == 3
     assert len(list((output_dir / "aggregate").iterdir())) == 3
     assert len(list((output_dir / "geocode").iterdir())) == 1
-    assert (output_dir / "panelize" / "panel.csv").exists()
+    assert (output_dir / "panelize" / "csv" / "all-regions.csv").exists()
 
 
 def test_config():
@@ -501,4 +500,4 @@ def test_process_ydisk_no_download(monkeypatch, tmp_path):
     assert len(list((tmp_path / "russian-sme-registry-data" / "extract").iterdir())) == 3
     assert len(list((tmp_path / "russian-sme-registry-data" / "aggregate").iterdir())) == 3
     assert len(list((tmp_path / "russian-sme-registry-data" / "geocode").iterdir())) == 1
-    assert (tmp_path / "russian-sme-registry-data" / "panelize" / "panel.csv").exists()
+    assert (tmp_path / "russian-sme-registry-data" / "panelize" / "csv" / "all-regions.csv").exists()

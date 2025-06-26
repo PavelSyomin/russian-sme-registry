@@ -51,7 +51,7 @@ def _join_area_and_type(a: Union[str, float], t: Union[str, float]) -> str:
 
 
 def _preprocess_text_column(c: pd.Series) -> pd.Series:
-    if c.notna().sum() == 0:
+    if c.isna().all():
         return c
 
     return c.str.upper().str.replace("Ё", "Е")
@@ -846,13 +846,16 @@ class DaDataGeocoder(SparkStage):
             .drop("count")
             .toPandas()
         )
-        print(addresses.head())
 
         addresses = self._normalize_address_elements_types(addresses)
         addresses = self._normalize_region_names(addresses)
-        addresses.fillna("", inplace=True)
-        addresses = addresses[["hash", "region", "district", "city", "settlement"]]
-        addresses = addresses.apply(_preprocess_text_column)
+        addresses = addresses[
+            ["hash", "region", "region_code", "region_iso_code", "district", "city", "settlement"]
+        ]
+        addresses[["district", "city", "settlement"]] = (
+            addresses[["district", "city", "settlement"]]
+            .apply(_preprocess_text_column)
+        )
 
         return addresses
 
@@ -872,8 +875,11 @@ class DaDataGeocoder(SparkStage):
         return addresses
 
     def _expand_abbrs(self, data: pd.DataFrame, column: str) -> pd.DataFrame:
+        if data[column].isna().all():
+            return data
+
         initial_count = len(data)
-        data[column] = data[column].fillna("").str.upper()
+        data[column] = data[column].str.upper()
         data = data.merge(
             self._abbr,
             how="left",
@@ -944,26 +950,32 @@ class DaDataGeocoder(SparkStage):
 
     def _geocode(self, addresses: pd.DataFrame) -> DataFrame:
         def hash(parts: Iterable[str]) -> str:
-            input_str = ", ".join(parts)
+            input_str = ", ".join(p.upper() for p in parts if pd.notna(p))
             return hashlib.sha256(input_str.encode("utf-8")).hexdigest()
 
         addresses["search_hash"] = pd.Series(
             map(
                 hash,
-                addresses.drop(columns=["hash"])
+                addresses.drop(columns=["hash", "region_code", "region_iso_code"])
                 .itertuples(index=False, name=None),
             ),
             index=addresses.index,
         )
 
-        unique_addresses = addresses.drop_duplicates(subset=["search_hash"]).drop(columns=["hash"])
+        unique_addresses = (
+            addresses
+            .drop_duplicates(subset=["search_hash"])
+            .drop(columns=["hash", "region_code", "region_iso_code"])
+        )
 
         print(f"There are {len(unique_addresses)} unique addresses to geocode")
 
         mapping = []
         missing_count = 0
-        for _, row in unique_addresses.iloc[:100, :].iterrows():
-            address_str = ", ".join(row[row != "NA"].drop(labels=["search_hash"]).str.lower().values)
+        for _, row in unique_addresses.iterrows():
+            address_str = ", ".join(
+                row.drop(labels=["search_hash"]).dropna().str.upper().values
+            )
             print(f"Geocoding {address_str}")
             if row["search_hash"] in self._cache:
                 search_result = self._get_from_cache(row["search_hash"])
@@ -973,8 +985,10 @@ class DaDataGeocoder(SparkStage):
                 search_result = self._geocode_address(address_str)
 
             suggestions = search_result.get("suggestions")
-            if not suggestions:
-                address_str = ", ".join(row[["region", "city"]].str.replace("NA", "").str.lower().values)
+            if not suggestions and len(row.dropna()) > 2:
+                address_str = ", ".join(
+                    row[["region", "city"]].dropna().str.upper().values
+                )
                 print(f"No suggestions found, trying again with {address_str}")
                 search_result = self._geocode_address(address_str)
                 suggestions = search_result.get("suggestions")
@@ -989,21 +1003,12 @@ class DaDataGeocoder(SparkStage):
                 self._update_cache(row["search_hash"], search_result)
 
             suggestion_data = suggestions[0]["data"]
-            try:
-                region_code = int(suggestion_data["region_kladr_id"][:2])
-            except ValueError:
-                region_code = None
-
-            region_name = self._regions.get(region_code).name
             area = suggestion_data["area_with_type"]
             if area and suggestion_data["area_type"] and suggestion_data["area_type_full"]:
                 area = area.replace(suggestion_data["area_type"], suggestion_data["area_type_full"])
 
             geocoded_address = (
                 row["search_hash"],
-                suggestion_data["region_iso_code"],
-                region_code,
-                region_name,
                 area,
                 suggestion_data["city"] or suggestion_data["settlement"],
                 suggestion_data["settlement_type"] if suggestion_data["settlement"] else "г",
@@ -1017,11 +1022,20 @@ class DaDataGeocoder(SparkStage):
         mapping = pd.DataFrame(
             mapping,
             columns=[
-                "search_hash", "region_iso_code", "region_code", "region",
-                "area", "settlement", "settlement_type", "oktmo", "lat", "lon"
+                "search_hash",
+                "area",
+                "settlement",
+                "settlement_type",
+                "oktmo",
+                "lat",
+                "lon",
             ]
         )
-        mapping = mapping.merge(addresses[["hash", "search_hash"]], how="right", on="search_hash")
+        mapping = mapping.merge(
+            addresses[["hash", "search_hash", "region", "region_code", "region_iso_code"]],
+            how="right",
+            on="search_hash",
+        )
         mapping = mapping.drop(columns=["search_hash"])
 
         print(f"Failed to geocode {missing_count} addresses")
