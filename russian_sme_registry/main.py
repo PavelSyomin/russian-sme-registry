@@ -12,6 +12,7 @@ from russian_sme_registry.stages.extract import Extractor
 from russian_sme_registry.stages.geocode import DaDataGeocoder, LocalGeocoder
 from russian_sme_registry.stages.panelize import Panelizer
 from russian_sme_registry.utils.enums import Geocoders, SourceDatasets, StageNames, Storages
+from russian_sme_registry.utils.helpers import print_config
 
 
 APP_NAME = "russian-sme-registry"
@@ -49,15 +50,15 @@ app.add_typer(
 )
 
 default_config = dict(
-    storage="local",
+    storage=Storages.local.value,
     token="",
     num_workers=1,
     chunksize=16,
-    geocoder="local",
+    geocoder=Geocoders.local.value,
     dadata_api_key="",
     output_formats=["csv"],
     split_by_region=False,
-    remove_personal_names=True,
+    with_personal_names=False,
     with_crimea=True,
     with_new_territories=False,
 )
@@ -524,7 +525,7 @@ def config(
             rich_help_panel="Control")
     ] = False,
     chunksize: Annotated[
-        int,
+        Optional[int],
         typer.Option(
             help="Chunk size for extractor",
             rich_help_panel="Available options",
@@ -532,7 +533,7 @@ def config(
         )
     ] = None,
     num_workers: Annotated[
-        int,
+        Optional[int],
         typer.Option(
             help="Number of workers = processes for extractor. "
                  "Bigger is faster, but cannot be higher than number of CPU cores",
@@ -541,7 +542,7 @@ def config(
         )
     ] = None,
     storage: Annotated[
-        Storages,
+        Optional[Storages],
         typer.Option(
             help="Place to store downloaded source datasets "
                  " and/or to later get them for extract stage. "
@@ -552,7 +553,7 @@ def config(
         )
     ] = None,
     token: Annotated[
-        str,
+        Optional[str],
         typer.Option(
             help="Token for Yandex Disk; used if *storage* is *ydisk*",
             rich_help_panel="Available options",
@@ -560,7 +561,7 @@ def config(
         )
     ] = None,
     geocoder: Annotated[
-        Geocoders,
+        Optional[Geocoders],
         typer.Option(
             help="Geocoder to use",
             rich_help_panel="Available options",
@@ -568,7 +569,7 @@ def config(
         )
     ] = None,
     dadata_api_key: Annotated[
-        str,
+        Optional[str],
         typer.Option(
             help="API key for DaData geocoder",
             rich_help_panel="Available options",
@@ -576,7 +577,7 @@ def config(
         )
     ] = None,
     output_formats: Annotated[
-        List[str],
+        Optional[List[str]],
         typer.Option(
             help="Output formats to save panel dataset to. Can be *csv*, *parquet*, *excel*. Multiple formats can be specified by multiple *output_formats* options, e.g. *--output_formats csv parquet*",
             rich_help_panel="Available options",
@@ -584,32 +585,36 @@ def config(
         )
     ] = None,
     split_by_region: Annotated[
-        bool,
+        Optional[bool],
         typer.Option(
+            "--split-by-region/--combine-regions",
             help="Split panel dataset by region",
             rich_help_panel="Available options",
             show_default="false"
         )
     ] = None,
-    remove_personal_names: Annotated[
-        bool,
+    with_personal_names: Annotated[
+        Optional[bool],
         typer.Option(
+            "--with-personal-names/--remove-personal-names",
             help="Remove personal names of sole traders from panel dataset for privacy reasons",
             rich_help_panel="Available options",
-            show_default="true"
+            show_default="false"
         )
     ] = None,
     with_crimea: Annotated[
-        bool,
+        Optional[bool],
         typer.Option(
+            "--with-crimea/--exclude-crimea",
             help="Include Crimea and Sevastopol regions",
             rich_help_panel="Available options",
             show_default="true"
         )
     ] = None,
     with_new_territories: Annotated[
-        bool,
+        Optional[bool],
         typer.Option(
+            "--with-new-territories/--exclude-new-territories",
             help="Include Donetsk, Luhansk, Zaporozhye, and Kherson regions",
             rich_help_panel="Available options",
             show_default="false"
@@ -620,32 +625,47 @@ def config(
     Show or set global options for all commands
     """
     if show:
-        print("Current configuration")
-        for key, value in app_config.items():
-            print(key, value)
-
+        print_config(app_config)
         return
 
     if num_workers and num_workers > os.cpu_count():
         num_workers = os.cpu_count()
         print(f"Number of workers is set to {num_workers} (max number of CPU cores)")
 
-    app_config["token"] = token or app_config.get("token")
-    app_config["num_workers"] = num_workers or app_config.get("num_workers")
-    app_config["chunksize"] = chunksize or app_config.get("chunksize")
-    app_config["storage"] = storage.value if storage else app_config.get("storage")
-    app_config["geocoder"] = geocoder.value if geocoder else app_config.get("geocoder")
-    app_config["dadata_api_key"] = dadata_api_key or app_config.get("dadata_api_key")
-    app_config["output_formats"] = output_formats or app_config.get("output_formats")
-    app_config["split_by_region"] = split_by_region or app_config.get("split_by_region")
-    app_config["remove_personal_names"] = remove_personal_names or app_config.get("remove_personal_names")
-    app_config["with_crimea"] = with_crimea or app_config.get("with_crimea")
-    app_config["with_new_territories"] = with_new_territories or app_config.get("with_new_territories")
+    loc = locals()
+    new_config = {}
+    for param_name in (
+        "token",
+        "num_workers",
+        "chunksize",
+        "storage",
+        "geocoder",
+        "dadata_api_key",
+        "output_formats",
+        "split_by_region",
+        "with_personal_names",
+        "with_crimea",
+        "with_new_territories",
+    ):
+        current_value = app_config.get(param_name)
+        new_value = loc.get(param_name)
+        if new_value is not None and new_value != []:
+            value = new_value
+            if param_name in ("storage", "geocoder"):  # enums
+                value = value.value
+        elif current_value is None or current_value == []:
+            value = default_config[param_name]
+        else:
+            value = app_config[param_name]
+
+        new_config[param_name] = value
 
     with open(app_config_path, "w") as f:
-        json.dump(app_config, f)
+        json.dump(new_config, f)
+        app_config.update(new_config)
 
     print("Configuration updated")
+    print_config(new_config)
 
 
 @app.command(rich_help_panel="Magic command")

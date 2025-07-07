@@ -57,3 +57,12 @@ def require_java(min_major: int = MIN_JAVA_VERSION[0], min_minor: int = MIN_JAVA
         print(f"This application requires Java {min_major}.{min_minor} or newer to run PySpark operations.")
         print("Please install a compatible version of Java and try again.")
         sys.exit(1)
+
+
+def print_config(config: dict):
+    print("Current configuration:")
+    for key, value in config.items():
+        key = key.replace("_", "-")
+        if isinstance(value, list):
+            value = ", ".join(value)
+        print(f"- {key}: {value}")
