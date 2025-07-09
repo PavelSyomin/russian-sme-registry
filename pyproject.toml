@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "russian-sme-registry"
-version = "1.0.0-beta.3"
+version = "1.0.0-beta.4"
 description = "A command-line tool to get a georeferenced dataset of Russian small and medium-sized enterprises (SME) from open data of Federal Tax Service"
 license = "GPL-3.0-or-later"
 authors = ["Pavel Syomin <pas.ntg@gmail.com>"]
