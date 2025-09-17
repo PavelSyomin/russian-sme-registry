@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from pyspark.sql import DataFrame, Window
 import pyspark.sql.functions as F
+from pyspark.storagelevel import StorageLevel
 import requests
 
 from ..stages.spark_stage import SparkStage
@@ -613,6 +614,7 @@ class LocalGeocoder(SparkStage):
             .withColumn("end_date", F.coalesce("end_date", "sme_entity_end_date"))
             .drop("hash", "prev_hash", "hash_change", "sme_entity_end_date")
             .orderBy("tin", "start_date")
+            .persist(StorageLevel.DISK_ONLY)
         )
         after_count = deduplicated.count()
 
@@ -1080,6 +1082,7 @@ class DaDataGeocoder(SparkStage):
             .withColumn("end_date", F.coalesce("end_date", "sme_entity_end_date"))
             .drop("hash", "prev_hash", "hash_change", "sme_entity_end_date")
             .orderBy("tin", "start_date")
+            .persist(StorageLevel.DISK_ONLY)
         )
         after_count = deduplicated.count()
 
