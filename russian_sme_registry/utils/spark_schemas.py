@@ -26,7 +26,6 @@ sme_schema = StructType([
     StructField("settlement_name", StringType(), True),
     StructField("settlement_type", StringType(), True),
     StructField("activity_code_main", StringType(), True),
-    StructField("activity_codes_additional", StringType(), True),
     StructField("file_id", StringType(), True),
     StructField("doc_cnt", ShortType(), True),
 ])
@@ -51,7 +50,6 @@ sme_aggregated_schema = StructType([
     StructField("settlement_name", StringType(), True),
     StructField("settlement_type", StringType(), True),
     StructField("activity_code_main", StringType(), True),
-    StructField("activity_codes_additional", StringType(), True),
     StructField("start_date", DateType(), True),
     StructField("end_date", DateType(), True),
 ])
@@ -67,7 +65,6 @@ sme_geocoded_schema = StructType([
     StructField("org_name", StringType(), True),
     StructField("org_short_name", StringType(), True),
     StructField("activity_code_main", StringType(), True),
-    StructField("activity_codes_additional", StringType(), True),
     StructField("region_iso_code", StringType(), True),
     StructField("region_code", StringType(), True),
     StructField("region", StringType(), True),

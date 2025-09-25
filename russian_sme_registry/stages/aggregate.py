@@ -65,7 +65,7 @@ class Aggregator(SparkStage):
             "org_name", "org_short_name",
             "region_name",
             "district_name", "city_name", "settlement_name",
-            "activity_code_main", "activity_codes_additional"
+            "activity_code_main",
         ]
         cols_to_select = [
             "kind",
@@ -87,7 +87,6 @@ class Aggregator(SparkStage):
             "settlement_name",
             "settlement_type",
             "activity_code_main",
-            "activity_codes_additional",
             "start_date",
             "end_date",
         ]

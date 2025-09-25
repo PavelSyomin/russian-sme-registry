@@ -87,7 +87,6 @@ class LocalGeocoder(SparkStage):
         "org_name",
         "org_short_name",
         "activity_code_main",
-        "activity_codes_additional",
         "region",
         "region_code",
         "region_iso_code",
@@ -110,7 +109,6 @@ class LocalGeocoder(SparkStage):
         "org_name",
         "org_short_name",
         "activity_code_main",
-        "activity_codes_additional",
         "region_iso_code",
         "region_code",
         "region",
@@ -135,7 +133,6 @@ class LocalGeocoder(SparkStage):
         "org_name",
         "org_short_name",
         "activity_code_main",
-        "activity_codes_additional",
     ]
 
     CHUNKSIZE = 1e6
@@ -669,7 +666,6 @@ class DaDataGeocoder(SparkStage):
         "org_name",
         "org_short_name",
         "activity_code_main",
-        "activity_codes_additional",
         "region",
         "region_code",
         "region_iso_code",
@@ -692,7 +688,6 @@ class DaDataGeocoder(SparkStage):
         "org_name",
         "org_short_name",
         "activity_code_main",
-        "activity_codes_additional",
         "region_iso_code",
         "region_code",
         "region",
@@ -717,7 +712,6 @@ class DaDataGeocoder(SparkStage):
         "org_name",
         "org_short_name",
         "activity_code_main",
-        "activity_codes_additional",
     ]
 
     SPARK_APP_NAME = "DaDataGeocoder"

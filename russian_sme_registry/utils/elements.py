@@ -23,7 +23,6 @@ elements = {
         "СведМН/НаселПункт/@Наим": "settlement_name",
         "СведМН/НаселПункт/@Тип": "settlement_type",
         "СвОКВЭД/СвОКВЭДОсн/@КодОКВЭД": "activity_code_main",
-        "СвОКВЭД/СвОКВЭДДоп/@КодОКВЭД": "activity_codes_additional",
     },
     "revexp": {
         "СведНП/@ИННЮЛ": "org_tin",

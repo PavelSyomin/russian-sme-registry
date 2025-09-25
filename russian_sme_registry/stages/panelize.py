@@ -46,7 +46,6 @@ class Panelizer(SparkStage):
                 "kind": "is_sole_trader",
                 "category": "sme_category",
                 "activity_code_main": "main_nace_code",
-                "activity_codes_additional": "additional_nace_codes",
                 "oktmo": "municipality_code",
             })
         )
