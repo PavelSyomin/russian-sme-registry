@@ -3,6 +3,7 @@ import shutil
 import tempfile
 
 from pyspark.sql import DataFrame, SparkSession
+import pyspark.sql.functions as F
 from pyspark.sql.types import StructType
 from ..utils.helpers import require_java
 
@@ -57,11 +58,15 @@ class SparkStage:
             "header": True,
             "escape": '"',
         }
+        add_input_file = kwargs.pop("add_input_file", False)
         options.update(kwargs)
 
         print(f"Reading source data at {in_path}")
 
         data = self._session.read.options(**options).schema(schema).csv(input_files)
+
+        if add_input_file:
+            data = data.withColumn("_input_file", F.input_file_name())
 
         print(f"Source CSV(s) contain(s) {data.count()} rows")
 
@@ -91,3 +96,4 @@ class SparkStage:
             shutil.move(result, out_file)
 
             print(f"Saved to {out_file}")
+

@@ -19,6 +19,48 @@ from ..utils.regions import Regions
 from ..utils.spark_schemas import sme_aggregated_schema, sme_geocoded_schema
 
 
+def deduplicate_geocoded_intervals(
+    data: DataFrame,
+    *,
+    id_col: str,
+    hash_cols: list,
+    output_cols: list,
+) -> DataFrame:
+    """Merge rows with same geocoded attributes when intervals are adjacent.
+
+    Geocoding can normalize different addresses to the same result. When two
+    rows (same TIN, same hash after geocoding) have adjacent or overlapping
+    (start_date, end_date) intervals, collapse them into one. Gaps are
+    preserved: intervals separated by a gap are not merged.
+    """
+    data = data.withColumn("_hash", F.hash(*hash_cols))
+    w = Window.partitionBy(id_col, "_hash").orderBy("start_date")
+    prev_end = F.lag("end_date").over(w)
+    is_new_group = prev_end.isNull() | (F.col("start_date") > prev_end)
+    data = data.withColumn(
+        "_merge_id",
+        F.sum(F.when(is_new_group, 1).otherwise(0)).over(
+            w.rowsBetween(Window.unboundedPreceding, 0)
+        ),
+    )
+    cols_for_agg = [
+        c for c in output_cols
+        if c not in ("start_date", "end_date", id_col)
+    ]
+    agg_exprs = [
+        F.min("start_date").alias("start_date"),
+        F.max("end_date").alias("end_date"),
+    ]
+    agg_exprs.extend([F.first(c).alias(c) for c in cols_for_agg])
+    return (
+        data.groupBy(id_col, "_hash", "_merge_id")
+        .agg(*agg_exprs)
+        .drop("_hash", "_merge_id")
+        .select(*output_cols)
+        .orderBy([id_col, "start_date"])
+    )
+
+
 def _join_name_and_type(n: Union[str, float], t: Union[str, float]) -> str:
     if pd.isna(n):
         return np.nan
@@ -588,33 +630,17 @@ class LocalGeocoder(SparkStage):
     def _remove_duplicates(self, in_file: str) -> DataFrame:
         print("Removing duplicates that may have appeared after geocoding")
 
-        w_for_row_number = (
-            Window
-            .partitionBy(self.DEDUPLICATION_INDEX)
-            .orderBy("start_date")
-        )
-        w_for_end_date = w_for_row_number.rowsBetween(0, Window.unboundedFollowing)
-        w_by_tin = Window.partitionBy(["tin"]).orderBy("start_date")
-        w_by_tin_unbounded = w_by_tin.rowsBetween(0, Window.unboundedFollowing)
-
         data = self._read(in_file, sme_geocoded_schema)
-
         initial_count = data.count()
-        deduplicated = (
-            data
-            .withColumn("hash", F.hash(*self.DEDUPLICATION_INDEX))
-            .withColumn("prev_hash", F.lag("hash", default=0).over(w_by_tin))
-            .withColumn("hash_change", F.col("hash") != F.col("prev_hash"))
-            .withColumn("sme_entity_end_date", F.last("end_date").over(w_by_tin_unbounded))
-            .filter("hash_change = true")
-            .withColumn("end_date", F.lead("start_date").over(w_by_tin))
-            .withColumn("end_date", F.coalesce("end_date", "sme_entity_end_date"))
-            .drop("hash", "prev_hash", "hash_change", "sme_entity_end_date")
-            .orderBy("tin", "start_date")
-            .persist(StorageLevel.DISK_ONLY)
-        )
-        after_count = deduplicated.count()
 
+        deduplicated = deduplicate_geocoded_intervals(
+            data,
+            id_col="tin",
+            hash_cols=self.DEDUPLICATION_INDEX,
+            output_cols=self.PRODUCT_COLS,
+        ).persist(StorageLevel.DISK_ONLY)
+
+        after_count = deduplicated.count()
         print(f"Removed {initial_count - after_count} duplicated rows")
 
         return deduplicated
@@ -1061,23 +1087,13 @@ class DaDataGeocoder(SparkStage):
     def _remove_duplicates(self, data: DataFrame) -> DataFrame:
         print("Removing duplicates that may have appeared after geocoding")
 
-        w_by_tin = Window.partitionBy(["tin"]).orderBy("start_date")
-        w_by_tin_unbounded = w_by_tin.rowsBetween(0, Window.unboundedFollowing)
-
         initial_count = data.count()
-        deduplicated = (
-            data
-            .withColumn("hash", F.hash(*self.DEDUPLICATION_INDEX))
-            .withColumn("prev_hash", F.lag("hash", default=0).over(w_by_tin))
-            .withColumn("hash_change", F.col("hash") != F.col("prev_hash"))
-            .withColumn("sme_entity_end_date", F.last("end_date").over(w_by_tin_unbounded))
-            .filter("hash_change = true")
-            .withColumn("end_date", F.lead("start_date").over(w_by_tin))
-            .withColumn("end_date", F.coalesce("end_date", "sme_entity_end_date"))
-            .drop("hash", "prev_hash", "hash_change", "sme_entity_end_date")
-            .orderBy("tin", "start_date")
-            .persist(StorageLevel.DISK_ONLY)
-        )
+        deduplicated = deduplicate_geocoded_intervals(
+            data,
+            id_col="tin",
+            hash_cols=self.DEDUPLICATION_INDEX,
+            output_cols=self.PRODUCT_COLS,
+        ).persist(StorageLevel.DISK_ONLY)
         after_count = deduplicated.count()
 
         print(f"Removed {initial_count - after_count} duplicated rows")
