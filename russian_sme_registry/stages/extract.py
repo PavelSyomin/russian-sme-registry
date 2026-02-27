@@ -44,15 +44,24 @@ def _make_dataframe(item, elements, target_codes=None, debug=True):
                 row[key] = " ".join(matches) if matches else None
             rows.append(row)
 
-        df = pd.DataFrame(rows)
+        if not rows:
+            df = pd.DataFrame(columns=elements.values())
+        else:
+            df = pd.DataFrame(rows)
 
         if debug:
             df["file_id"] = root.get("ИдФайл")
             df["doc_cnt"] = root.get("КолДок")
 
+        # Fix wrong data dates if any
+        most_common_date = df["data_date"].mode(dropna=True)
+        if not most_common_date.empty:
+            df["data_date"] = most_common_date.iat[0]
+
         return df
 
     except Exception as e:
+        print(df.head(1))
         print(f"Something is wrong with {e}, skipping")
         print(e)
 

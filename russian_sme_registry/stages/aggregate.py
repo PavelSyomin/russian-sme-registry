@@ -1,9 +1,7 @@
 from typing import List, Optional
 
 from pyspark.sql import DataFrame, Window
-from pyspark.sql.functions import broadcast
 import pyspark.sql.functions as F
-from pyspark.sql.types import DateType, StructField, StructType
 
 from ..stages.spark_stage import SparkStage
 from ..utils.enums import SourceDatasets
@@ -58,25 +56,19 @@ class Aggregator(SparkStage):
     ):
         """Process CSV files extracted from SME registry archives.
 
-        Implements gaps-and-islands logic to merge duplicate rows (same attributes
-        across consecutive dates) into single rows with start_date and end_date.
-        A gap is detected when a date exists in the table (for other TINs) but
-        not for this TIN—such gaps split islands into separate rows.
+        Islands are defined by (tin, reestr_date): exclusion and re-entry updates
+        reestr_date. Within each island, merge duplicate rows (same attributes
+        across consecutive data_date) into intervals. First group in island uses
+        reestr_date as start_date; subsequent groups use first data_date.
+        Empty reestr_date falls back to data_date for island partitioning.
         """
         data = self._read(
             in_dir,
             sme_schema,
             dateFormat=self.INPUT_DATE_FORMAT,
-            add_input_file=True,
         )
         if data is None:
             return
-
-        data = self._validate_and_fix_data_dates_per_file(
-            data,
-            file_col="_input_file",
-            date_col="data_date",
-        )
 
         cols_to_check_for_duplicates = [
             "kind", "category", "tin", "reg_number",
@@ -159,10 +151,11 @@ class Aggregator(SparkStage):
             .withColumn("reg_number", F.first("reg_number", ignorenulls=True).over(w_by_tin_unbounded))
         )
 
-        table = self._deduplicate_gaps_and_islands(
+        table = self._deduplicate_by_reestr_date(
             data_prepared,
-            date_col="data_date",
             id_col="tin",
+            reestr_date_col="reestr_date",
+            data_date_col="data_date",
             hash_cols=cols_to_check_for_duplicates,
             output_cols=cols_to_select,
         ).cache()
@@ -203,212 +196,68 @@ class Aggregator(SparkStage):
 
         self._write(table, out_file)
 
-    def _validate_and_fix_data_dates_per_file(
+    def _deduplicate_by_reestr_date(
         self,
         data: DataFrame,
         *,
-        file_col: str,
-        date_col: str,
-        low_freq_threshold: float = 0.01,
-    ) -> DataFrame:
-        """Validate data_date per input file: each file should have one date.
-        If multiple dates exist and a date has frequency < threshold, replace
-        it with the majority date. Otherwise raise RuntimeError.
-        """
-        file_date_counts = data.groupBy(file_col, date_col).count()
-        file_totals = data.groupBy(file_col).count().withColumnRenamed(
-            "count", "_file_total"
-        )
-        file_stats = (
-            file_date_counts.join(file_totals, file_col)
-            .withColumn("_freq", F.col("count") / F.col("_file_total"))
-        )
-
-        w = Window.partitionBy(file_col).orderBy(F.desc("count"))
-        majority = (
-            file_stats.withColumn("_rank", F.row_number().over(w))
-            .filter("_rank == 1")
-            .select(
-                F.col(file_col).alias("_file"),
-                F.col(date_col).alias("_majority_date"),
-            )
-        )
-
-        correctable = (
-            file_stats.filter(F.col("_freq") < low_freq_threshold)
-            .join(majority, F.col(file_col) == F.col("_file"))
-            .select(
-                F.col(file_col).alias("_fc_file"),
-                F.col(date_col).alias("_wrong_date"),
-                F.col("_majority_date"),
-            )
-        )
-
-        high_freq_dates = file_stats.filter(F.col("_freq") >= low_freq_threshold)
-        files_with_multiple = (
-            file_stats.groupBy(file_col)
-            .agg(F.count("*").alias("_num_dates"))
-            .filter("_num_dates > 1")
-        )
-        problematic = (
-            files_with_multiple.join(high_freq_dates, file_col)
-            .join(majority, F.col(file_col) == F.col("_file"))
-            .filter(F.col(date_col) != F.col("_majority_date"))
-        )
-        problematic_files = problematic.select(file_col).distinct()
-        problematic_count = problematic_files.count()
-        if problematic_count > 0:
-            bad_files = problematic_files.limit(10).collect()
-            raise RuntimeError(
-                f"Data quality error: {problematic_count} file(s) have multiple "
-                f"data_date values with frequency >= {low_freq_threshold:.0%}. "
-                f"Each input file must have exactly one date. "
-                f"Affected files (sample): {[r[0] for r in bad_files]}"
-            )
-
-        if correctable.count() > 0:
-            data = (
-                data.join(
-                    correctable,
-                    (F.col(file_col) == F.col("_fc_file"))
-                    & (F.col(date_col) == F.col("_wrong_date")),
-                    "left",
-                )
-                .withColumn(
-                    date_col,
-                    F.coalesce(F.col("_majority_date"), F.col(date_col)),
-                )
-                .drop("_fc_file", "_wrong_date", "_majority_date")
-            )
-            print(
-                f"Corrected low-frequency data_date values "
-                f"(<{low_freq_threshold:.0%}) to majority date per file"
-            )
-
-        return data.drop(file_col)
-
-    def _warn_low_frequency_calendar_dates(
-        self,
-        data: DataFrame,
-        *,
-        date_col: str,
-        low_freq_threshold: float = 0.001,
-    ) -> None:
-        """Warn if any date in the calendar has extremely low frequency."""
-        total = data.count()
-        if total == 0:
-            return
-        date_counts = data.groupBy(date_col).count()
-        date_counts = date_counts.withColumn(
-            "_freq", F.col("count") / F.lit(total)
-        )
-        low_freq = date_counts.filter(F.col("_freq") < low_freq_threshold)
-        low_freq_list = low_freq.collect()
-        if low_freq_list:
-            print(
-                f"WARNING: {len(low_freq_list)} date(s) have very low frequency "
-                f"(<{low_freq_threshold:.2%}) in the data. This may indicate "
-                f"data quality issues and could affect gap detection:"
-            )
-            for row in low_freq_list[:10]:
-                print(f"  {row[date_col]}: {row['count']} rows ({row['_freq']:.4%})")
-            if len(low_freq_list) > 10:
-                print(f"  ... and {len(low_freq_list) - 10} more")
-
-    def _deduplicate_gaps_and_islands(
-        self,
-        data: DataFrame,
-        *,
-        date_col: str,
         id_col: str,
+        reestr_date_col: str,
+        data_date_col: str,
         hash_cols: List[str],
         output_cols: List[str],
     ) -> DataFrame:
-        """Merge duplicate rows (same attributes across consecutive dates) into
-        intervals with start_date and end_date. Uses gaps-and-islands logic with
-        gap detection: a gap exists when a date appears in the table for other
-        IDs but not for this one.
+        """Merge duplicate rows within islands defined by (tin, reestr_date).
+
+        Islands: same reestr_date = same registry period. Empty reestr_date
+        falls back to data_date. Within each island, group by attribute hash;
+        first group uses reestr_date as start_date, others use min(data_date).
+        Single window + single groupBy for efficiency.
         """
-        w = Window.partitionBy(id_col).orderBy(date_col)
-        cols_for_group = [
+        island_date = F.coalesce(F.col(reestr_date_col), F.col(data_date_col))
+        data = data.withColumn("_island_date", island_date).withColumn(
+            "_hash", F.hash(*hash_cols)
+        )
+
+        w = Window.partitionBy(id_col, "_island_date").orderBy(data_date_col)
+        prev_hash = F.lag("_hash", 1).over(w)
+        is_new_group = prev_hash.isNull() | (prev_hash != F.col("_hash"))
+        group_id = F.sum(F.when(is_new_group, 1).otherwise(0)).over(
+            w.rowsBetween(Window.unboundedPreceding, 0)
+        )
+        row_num = F.row_number().over(w)
+        is_first_in_island = (row_num == 1)
+
+        data = data.withColumn("_group_id", group_id).withColumn(
+            "_is_first_in_island", is_first_in_island
+        )
+
+        cols_for_agg = [
             c for c in output_cols
             if c not in ("start_date", "end_date", id_col)
         ]
-
-        self._warn_low_frequency_calendar_dates(data, date_col=date_col)
-
-        dates_sorted = sorted(
-            row[0] for row in data.select(date_col).distinct().collect()
-        )
-        calendar_data = [
-            (d, dates_sorted[i + 1] if i + 1 < len(dates_sorted) else None)
-            for i, d in enumerate(dates_sorted)
-        ]
-        calendar_schema = StructType([
-            StructField(date_col, DateType(), False),
-            StructField("next_global_date", DateType(), True),
-        ])
-        global_calendar = broadcast(
-            self._session.createDataFrame(calendar_data, schema=calendar_schema)
-        )
-
-        data_with_cal = data.join(global_calendar, on=date_col, how="left")
-        data_with_cal = data_with_cal.withColumn(
-            "hash", F.hash(*hash_cols)
-        )
-
-        prev_next_global = F.lag("next_global_date").over(w)
-        df_analysis = (
-            data_with_cal
-            .withColumn("prev_hash", F.lag("hash", default=0).over(w))
-            .withColumn(
-                "started_due_to_gap",
-                (prev_next_global != F.col(date_col)) & F.col("prev_hash").isNotNull(),
-            )
-            .withColumn(
-                "is_new_island",
-                F.col("prev_hash").isNull()
-                | (F.col("prev_hash") != F.col("hash"))
-                | (prev_next_global != F.col(date_col)),
-            )
-        )
-        df_islands = df_analysis.withColumn(
-            "island_id",
-            F.sum(F.when(F.col("is_new_island"), 1).otherwise(0)).over(
-                w.rowsBetween(Window.unboundedPreceding, 0)
-            ),
-        )
-
         agg_exprs = [
-            F.min(date_col).alias("start_date"),
-            F.max(date_col).alias("max_date"),
-            F.max(F.struct(date_col, "next_global_date")).getField(
-                "next_global_date"
-            ).alias("last_next_global"),
-            F.max(F.when(F.col("started_due_to_gap"), 1).otherwise(0)).alias(
-                "_started_due_to_gap"
+            F.min(data_date_col).alias("_min_dt"),
+            F.max(data_date_col).alias("_max_dt"),
+            F.first("_island_date").alias("_island_dt"),
+            F.max(F.when(F.col("_is_first_in_island"), 1).otherwise(0)).alias(
+                "_has_first"
             ),
         ]
-        agg_exprs.extend([F.first(c).alias(c) for c in cols_for_group])
+        agg_exprs.extend([F.first(c).alias(c) for c in cols_for_agg])
 
-        grouped = df_islands.groupBy(id_col, "island_id").agg(*agg_exprs)
+        grouped = data.groupBy(id_col, "_island_date", "_group_id").agg(*agg_exprs)
+        result = grouped.withColumn(
+            "start_date",
+            F.when(F.col("_has_first") == 1, F.col("_island_dt")).otherwise(
+                F.col("_min_dt")
+            ),
+        ).withColumn("end_date", F.col("_max_dt"))
 
-        w_final = Window.partitionBy(id_col).orderBy("start_date")
-        result = (
-            grouped
-            .withColumn(
-                "end_date",
-                F.when(
-                    F.lead("_started_due_to_gap").over(w_final) == 1,
-                    F.col("last_next_global"),
-                ).otherwise(F.coalesce(F.lead("start_date").over(w_final), F.col("max_date"))),
-            )
-            .drop("_started_due_to_gap", "last_next_global", "max_date", "island_id")
+        return (
+            result.drop("_min_dt", "_max_dt", "_island_dt", "_has_first", "_group_id")
             .select(*output_cols)
             .orderBy([id_col, "start_date"])
         )
-
-        return result
 
     def _process_empl_data(self, in_dir: str, out_file: str,
                            sme_data_file: Optional[str]):
