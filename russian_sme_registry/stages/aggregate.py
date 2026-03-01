@@ -58,9 +58,9 @@ class Aggregator(SparkStage):
 
         Islands are defined by (tin, reestr_date): exclusion and re-entry updates
         reestr_date. Within each island, merge duplicate rows (same attributes
-        across consecutive data_date) into intervals. First group in island uses
-        reestr_date as start_date; subsequent groups use first data_date.
-        Empty reestr_date falls back to data_date for island partitioning.
+        across consecutive data_date) into intervals. start_date = first data_date
+        of each group, end_date = last data_date. Empty reestr_date falls back
+        to data_date for island partitioning.
         """
         data = self._read(
             in_dir,
@@ -210,7 +210,7 @@ class Aggregator(SparkStage):
 
         Islands: same reestr_date = same registry period. Empty reestr_date
         falls back to data_date. Within each island, group by attribute hash;
-        first group uses reestr_date as start_date, others use min(data_date).
+        start_date = first data_date of group, end_date = last data_date.
         Single window + single groupBy for efficiency.
         """
         island_date = F.coalesce(F.col(reestr_date_col), F.col(data_date_col))
@@ -224,37 +224,23 @@ class Aggregator(SparkStage):
         group_id = F.sum(F.when(is_new_group, 1).otherwise(0)).over(
             w.rowsBetween(Window.unboundedPreceding, 0)
         )
-        row_num = F.row_number().over(w)
-        is_first_in_island = (row_num == 1)
 
-        data = data.withColumn("_group_id", group_id).withColumn(
-            "_is_first_in_island", is_first_in_island
-        )
+        data = data.withColumn("_group_id", group_id)
 
         cols_for_agg = [
             c for c in output_cols
             if c not in ("start_date", "end_date", id_col)
         ]
         agg_exprs = [
-            F.min(data_date_col).alias("_min_dt"),
-            F.max(data_date_col).alias("_max_dt"),
-            F.first("_island_date").alias("_island_dt"),
-            F.max(F.when(F.col("_is_first_in_island"), 1).otherwise(0)).alias(
-                "_has_first"
-            ),
+            F.min(data_date_col).alias("start_date"),
+            F.max(data_date_col).alias("end_date"),
         ]
         agg_exprs.extend([F.first(c).alias(c) for c in cols_for_agg])
 
         grouped = data.groupBy(id_col, "_island_date", "_group_id").agg(*agg_exprs)
-        result = grouped.withColumn(
-            "start_date",
-            F.when(F.col("_has_first") == 1, F.col("_island_dt")).otherwise(
-                F.col("_min_dt")
-            ),
-        ).withColumn("end_date", F.col("_max_dt"))
 
         return (
-            result.drop("_min_dt", "_max_dt", "_island_dt", "_has_first", "_group_id")
+            grouped.drop("_island_date", "_group_id")
             .select(*output_cols)
             .orderBy([id_col, "start_date"])
         )
