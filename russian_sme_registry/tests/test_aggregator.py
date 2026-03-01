@@ -48,52 +48,52 @@ def test_aggregate_sme(tmp_path):
 
     assert len(df) == 37
 
-    # reestr_date-based islands: first group uses reestr_date as start_date
+    # start_date = first data_date of each group
     no_change = df.loc[df["tin"] == "591604272151"]
     assert len(no_change) == 1
-    assert no_change["start_date"].iloc[0] == "2016-08-01"  # reestr_date
+    assert no_change["start_date"].iloc[0] == "2019-02-10"
     assert no_change["end_date"].iloc[0] == "2020-11-10"
 
     category_change = df.loc[df["tin"] == "8901037297"]
     assert len(category_change) == 2
     assert list(category_change["category"]) == ["1", "2"]
-    assert list(category_change["start_date"]) == ["2018-12-10", "2019-05-10"]  # reestr_date, then first data_date
+    assert list(category_change["start_date"]) == ["2019-02-10", "2019-05-10"]
     assert list(category_change["end_date"]) == ["2019-02-10", "2020-11-10"]
 
     last_name_change = df.loc[df["tin"] == "890102946212"]
     assert len(last_name_change) == 2
     assert list(last_name_change["last_name"]) == ["ГАЛЯМШИНА", "ГРОМОВА"]
-    assert list(last_name_change["start_date"]) == ["2018-11-10", "2020-11-10"]
+    assert list(last_name_change["start_date"]) == ["2019-02-10", "2020-11-10"]
     assert list(last_name_change["end_date"]) == ["2019-05-10", "2020-11-10"]
 
     location_change = df.loc[df["tin"] == "5233003589"]
     assert len(location_change) == 2
     assert list(location_change["settlement_name"]) == ["ТОНКИНО", "ПИЖМА"]
-    assert list(location_change["start_date"]) == ["2018-04-10", "2020-11-10"]
+    assert list(location_change["start_date"]) == ["2019-02-10", "2020-11-10"]
     assert list(location_change["end_date"]) == ["2019-05-10", "2020-11-10"]
 
     ac_change = df.loc[df["tin"] == "523201067705"]
     assert len(ac_change) == 2
     assert list(ac_change["activity_code_main"]) == ["49.42", "49.41"]
-    assert list(ac_change["start_date"]) == ["2018-09-10", "2019-05-10"]
+    assert list(ac_change["start_date"]) == ["2019-02-10", "2019-05-10"]
     assert list(ac_change["end_date"]) == ["2019-02-10", "2020-11-10"]
 
     reverted_change = df.loc[df["tin"] == "5235000135"]
     assert len(reverted_change) == 3
     assert list(reverted_change["org_short_name"]) == ["УРЕНСКОЕ РАЙПО", "УРЕНСКИЙ РАЙПОТРЕБ", "УРЕНСКОЕ РАЙПО"]
-    assert list(reverted_change["start_date"]) == ["2016-09-10", "2019-05-10", "2020-11-10"]
+    assert list(reverted_change["start_date"]) == ["2019-02-10", "2019-05-10", "2020-11-10"]
     assert list(reverted_change["end_date"]) == ["2019-02-10", "2019-05-10", "2020-11-10"]
 
     location_case_change = df.loc[df["tin"] == "5233001662"]
     assert len(location_case_change) == 1
-    assert list(location_case_change["start_date"]) == ["2016-08-01"]
+    assert list(location_case_change["start_date"]) == ["2019-02-10"]
     assert list(location_case_change["end_date"]) == ["2020-11-10"]
 
     multiple_simultaneous_changes = df.loc[df["tin"] == "523101378432"]
     assert len(multiple_simultaneous_changes) == 2
     assert list(multiple_simultaneous_changes["first_name"]) == ["АНДРЕЙ", "НИКОЛАЙ"]
     assert list(multiple_simultaneous_changes["activity_code_main"]) == ["16.10", "16.11"]
-    assert list(multiple_simultaneous_changes["start_date"]) == ["2016-08-01", "2019-05-10"]
+    assert list(multiple_simultaneous_changes["start_date"]) == ["2019-02-10", "2019-05-10"]
     assert list(multiple_simultaneous_changes["end_date"]) == ["2019-02-10", "2020-11-10"]
 
     multiple_consequtive_changes = df.loc[df["tin"] == "5234003790"]
@@ -101,7 +101,7 @@ def test_aggregate_sme(tmp_path):
     assert list(multiple_consequtive_changes["org_name"]) == ["ПОТРЕБИТЕЛЬСКОЕ ОБЩЕСТВО \"ТОНШАЕВСКИЙ УНИВЕРСАМ\"", "ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ \"ТОНШАЕВСКИЙ УНИВЕРСАМ\"", "ПОТРЕБИТЕЛЬСКОЕ ОБЩЕСТВО \"ТОНШАЕВСКИЙ УНИВЕРСАМ\""]
     assert list(multiple_consequtive_changes["city_name"]) == [np.nan, np.nan, "НИЖНИЙ НОВГОРОД"]
     assert list(multiple_consequtive_changes["settlement_name"]) == ["ТОНШАЕВО", "ТОНШАЕВО", np.nan]
-    assert list(multiple_consequtive_changes["start_date"]) == ["2016-09-10", "2019-05-10", "2020-11-10"]
+    assert list(multiple_consequtive_changes["start_date"]) == ["2019-02-10", "2019-05-10", "2020-11-10"]
     assert list(multiple_consequtive_changes["end_date"]) == ["2019-02-10", "2019-05-10", "2020-11-10"]
 
 
@@ -154,20 +154,20 @@ def test_aggregate_sme_gap_detection(tmp_path):
     # TIN with 2 islands (different reestr_date): re-entry after exclusion
     gap_tin = df.loc[df["tin"] == "9999999999"]
     assert len(gap_tin) == 2, "Different reestr_date = 2 islands"
-    assert list(gap_tin["start_date"]) == ["2018-12-10", "2020-10-10"]
+    assert list(gap_tin["start_date"]) == ["2019-02-10", "2020-11-10"]
     assert list(gap_tin["end_date"]) == ["2019-02-10", "2020-11-10"]
     assert list(gap_tin["org_short_name"]) == ["ООО GAP", "ООО GAP"]
 
     # TIN without gap: same reestr_date across all dates
     no_gap_tin = df.loc[df["tin"] == "7777777777"]
     assert len(no_gap_tin) == 1, "Same reestr_date = 1 island"
-    assert no_gap_tin["start_date"].iloc[0] == "2018-12-10"
+    assert no_gap_tin["start_date"].iloc[0] == "2019-02-10"
     assert no_gap_tin["end_date"].iloc[0] == "2020-11-10"
 
 
 def test_aggregate_sme_no_gap_when_date_absent(tmp_path):
     """Same reestr_date across dates = 1 island. TIN with 2019-02-10 and 2020-11-10,
-    same reestr_date, produces 1 merged row. start_date = reestr_date.
+    same reestr_date, produces 1 merged row. start_date = first data_date.
     """
     in_dir = tmp_path / "sme_no_gap"
     in_dir.mkdir()
@@ -200,7 +200,7 @@ def test_aggregate_sme_no_gap_when_date_absent(tmp_path):
 
     tin = df.loc[df["tin"] == "6666666666"]
     assert len(tin) == 1, "Same reestr_date = 1 island"
-    assert tin["start_date"].iloc[0] == "2018-12-10"  # reestr_date
+    assert tin["start_date"].iloc[0] == "2019-02-10"
     assert tin["end_date"].iloc[0] == "2020-11-10"
 
 
@@ -233,7 +233,7 @@ def test_aggregate_sme_empty_reestr_date_fallback(tmp_path):
     df = pd.read_csv(out_file, dtype=str)
     tin = df.loc[df["tin"] == "5555555555"]
     assert len(tin) == 1
-    assert tin["start_date"].iloc[0] == "2019-02-10"  # island_date=data_date, first group
+    assert tin["start_date"].iloc[0] == "2019-02-10"
     assert tin["end_date"].iloc[0] == "2019-02-10"
 
 
