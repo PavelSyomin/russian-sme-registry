@@ -534,6 +534,12 @@ class LocalGeocoder(SparkStage):
                 "standard": ["region", "area"],
                 "type": "cities",
             },
+            {
+                "name": "Cities by region and city-as-district",
+                "addresses": ["region", "district_name"],
+                "standard": ["region", "city"],
+                "type": "cities",
+            },
         ]
 
         mappings = []
