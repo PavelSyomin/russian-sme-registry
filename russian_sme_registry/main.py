@@ -61,6 +61,7 @@ default_config = dict(
     with_personal_names=False,
     with_crimea=True,
     with_new_territories=False,
+    make_filtered_orgs_table=False,
 )
 
 app_dir = typer.get_app_dir(APP_NAME)
@@ -499,6 +500,7 @@ def panelize(
     save_to_parquet = "parquet" in app_config.get("output_formats", [])
     save_to_excel = "excel" in app_config.get("output_formats", [])
     split_by_region = app_config.get("split_by_region", False)
+    make_filtered_orgs_table = app_config.get("make_filtered_orgs_table", False)
 
     p = Panelizer()
     p(
@@ -511,6 +513,7 @@ def panelize(
         save_to_parquet,
         save_to_excel,
         split_by_region,
+        make_filtered_orgs_table,
     )
 
 
@@ -620,6 +623,15 @@ def config(
             show_default="false"
         )
     ] = None,
+    make_filtered_orgs_table: Annotated[
+        Optional[bool],
+        typer.Option(
+            "--make-filtered-orgs-table/--produce-entire-dataset-only",
+            help="Make additional panel for ogranisations only with at least one year of non-missing revenue/expenditure or employees count",
+            rich_help_panel="Available options",
+            show_default="false",
+        )
+    ] = None,
 ):
     """
     Show or set global options for all commands
@@ -646,6 +658,7 @@ def config(
         "with_personal_names",
         "with_crimea",
         "with_new_territories",
+        "make_filtered_orgs_table",
     ):
         current_value = app_config.get(param_name)
         new_value = loc.get(param_name)

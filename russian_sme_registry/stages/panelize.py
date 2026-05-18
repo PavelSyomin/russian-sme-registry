@@ -26,6 +26,7 @@ class Panelizer(SparkStage):
             save_to_parquet: bool = False,
             save_to_excel: bool = False,
             split_by_region: bool = False,
+            make_filtered_orgs_table: bool = False,
         ):
         sme_data = self._read(sme_file, sme_geocoded_schema)
         if sme_data is None:
@@ -71,19 +72,50 @@ class Panelizer(SparkStage):
 
         panel = panel.orderBy("tax_number", "year")
 
-        if split_by_region:
-            parts = self._split_by_region(panel)
-        else:
-            parts = {"all-regions": panel}
+        options = ["entire-dataset"]
+        if make_filtered_orgs_table:
+            options += ["filtered-orgs"]
 
-        if save_to_csv:
-            self._save_csv(parts, out_dir)
-        if save_to_parquet:
-            self._save_parquet(parts, out_dir)
-        if save_to_excel:
-            self._save_excel(parts, out_dir)
+        for option in options:
+            if option == "filtered-orgs":
+                panel = self._filter_orgs(panel)
+                print(f"There are {panel.count()} rows for filtered orgs")
+
+            if split_by_region:
+                parts = self._split_by_region(panel)
+            else:
+                parts = {"all-regions": panel}
+
+            out_path = pathlib.Path(out_dir) / option
+            if save_to_csv:
+                self._save_csv(parts, out_path)
+            if save_to_parquet:
+                self._save_parquet(parts, out_path)
+            if save_to_excel:
+                self._save_excel(parts, out_path)
 
         self._print_summary(panel)
+
+    def _filter_orgs(self, panel: DataFrame) -> DataFrame:
+        checked_columns = ("revenue", "expenditure", "employees_count")
+        if not all(c in panel.columns for c in checked_columns):
+            return panel
+
+        condition = (
+            (F.col("is_sole_trader") == 0) &
+            F.col("revenue").isNotNull() |
+            F.col("expenditure").isNotNull() |
+            F.col("employees_count").isNotNull()
+        )
+        window = Window.partitionBy("tax_number")
+
+        return (
+            panel
+            .withColumn("has_data", F.when(condition, 1).otherwise(0))
+            .withColumn("valid_rows", F.sum("has_data").over(window))
+            .filter(F.col("valid_rows") > 0)
+            .drop("has_data", "valid_rows")
+        )
 
     def _print_summary(self, panel: DataFrame):
         count = panel.summary("count").toPandas()
@@ -93,27 +125,29 @@ class Panelizer(SparkStage):
         count["missing"] = count["total"] - count["count"]
         count = count[["total", "missing"]]
 
+        numeric_cols = [
+            "year",
+            "sme_category",
+            "is_sole_trader",
+            "is_farmer",
+            "lat",
+            "lon",
+            "region_code",
+        ]
+
+        for col in ("revenue", "expenditure", "employees_count"):
+            if col in panel.columns:
+                numeric_cols.append(col)
+
         stats = (
-            panel.select(
-                "year",
-                "sme_category",
-                "is_sole_trader",
-                "is_farmer",
-                "lat",
-                "lon",
-                "revenue",
-                "expenditure",
-                "employees_count",
-                "region_code",
-            )
+            panel
+            .select(*numeric_cols)
             .summary("mean", "min", "max")
             .toPandas()
             .set_index("summary")
             .T
             .astype(float)
         )
-        print(count)
-        print(stats)
 
         count = count.join(stats)
 
@@ -136,24 +170,24 @@ class Panelizer(SparkStage):
 
         return parts
 
-    def _save_csv(self, parts: Dict[str, DataFrame], out_dir: str):
-        path = pathlib.Path(out_dir) / "csv"
+    def _save_csv(self, parts: Dict[str, DataFrame], out_dir: pathlib.Path):
+        path = out_dir / "csv"
         path.mkdir(parents=True, exist_ok=True)
 
         for region, part in parts.items():
             out_file = path / f"{region}.csv"
             self._write(part, out_file, nullValue="NA", sep=";")
 
-    def _save_parquet(self, parts: Dict[str, DataFrame], out_dir: str):
-        path = pathlib.Path(out_dir) / "parquet"
+    def _save_parquet(self, parts: Dict[str, DataFrame], out_dir: pathlib.Path):
+        path = out_dir / "parquet"
         path.mkdir(parents=True, exist_ok=True)
 
         for region, part in parts.items():
             out_file = path / f"{region}.parquet"
             self._write(part, out_file, format="parquet")
 
-    def _save_excel(self, parts: Dict[str, DataFrame], out_dir: str):
-        path = pathlib.Path(out_dir) / "excel"
+    def _save_excel(self, parts: Dict[str, DataFrame], out_dir: pathlib.Path):
+        path = out_dir / "excel"
         path.mkdir(parents=True, exist_ok=True)
 
         for region, part in parts.items():
