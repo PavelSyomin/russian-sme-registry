@@ -30,6 +30,7 @@ fuzzywuzzy = "^0.18.0"
 python-levenshtein = "^0.23.0"
 pyarrow = "^20.0.0"
 openpyxl = "^3.1.5"
+tabulate = "^0.10.0"
 
 [tool.poetry.scripts]
 russian-sme-registry = "russian_sme_registry.main:app"

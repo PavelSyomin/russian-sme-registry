@@ -83,6 +83,44 @@ class Panelizer(SparkStage):
         if save_to_excel:
             self._save_excel(parts, out_dir)
 
+        self._print_summary(panel)
+
+    def _print_summary(self, panel: DataFrame):
+        count = panel.summary("count").toPandas()
+        count.set_index("summary", inplace=True)
+        count = count.T.astype({"count": int})
+        count["total"] = panel.count()
+        count["missing"] = count["total"] - count["count"]
+        count = count[["total", "missing"]]
+
+        stats = (
+            panel.select(
+                "year",
+                "sme_category",
+                "is_sole_trader",
+                "is_farmer",
+                "lat",
+                "lon",
+                "revenue",
+                "expenditure",
+                "employees_count",
+                "region_code",
+            )
+            .summary("mean", "min", "max")
+            .toPandas()
+            .set_index("summary")
+            .T
+            .astype(float)
+        )
+        print(count)
+        print(stats)
+
+        count = count.join(stats)
+
+        print("\n---Summary statistics of the panel---")
+        print(count.to_markdown(tablefmt="github"))
+
+
     def _split_by_region(self, panel: DataFrame) -> Dict[str, DataFrame]:
         regions = [
             row.region for
