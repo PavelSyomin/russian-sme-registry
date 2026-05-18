@@ -33,17 +33,15 @@ class Panelizer(SparkStage):
 
         panel = (
             sme_data
-            .withColumn(
-                "year",
-                F.explode(F.sequence(F.year("start_date"), F.year("end_date")))
-            )
-            .withColumn(
-                "kind", (F.col("kind") == 2).cast(ByteType())
-            )
+            .withColumns({
+                "year": F.explode(F.sequence(F.year("start_date"), F.year("end_date"))),
+                "is_sole_trader": (F.col("kind") != 1).cast(ByteType()),
+                "is_farmer": (F.col("kind") == 3).cast(ByteType()),
+            })
+            .drop("kind")
             .withColumnsRenamed({
                 "tin": "tax_number",
                 "reg_number": "registration_number",
-                "kind": "is_sole_trader",
                 "category": "sme_category",
                 "activity_code_main": "main_nace_code",
                 "oktmo": "municipality_code",
